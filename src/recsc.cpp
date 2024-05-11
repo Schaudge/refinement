@@ -92,6 +92,7 @@ void Recsc::correct2() {
     }
     const bioio::FastaIndex ref_index = bioio::read_fasta_index(fa_index);
 
+    bool error_exit_flag{false};
     // read bed/interval file into merged region vector for loop
     string line, chr, region_start, region_end;
     ifstream region_input(options->regionFile);
@@ -128,16 +129,14 @@ void Recsc::correct2() {
     std::map<size_t, std::vector<bam1_t*>> back_moved_reads;
     while (sam_read1(in, bam_header, b) >= 0) {
         while (riter_idx < region_size && b->core.tid > get<0>(numerical_regions[riter_idx])) {
-            if (BamUtil::outAndEraseReads(back_moved_reads, output, bam_header, 0) != 0)
+            if (BamUtil::outputAndEraseReads(back_moved_reads, output, bam_header, 0) != 0) {
+                error_exit_flag = true;
                 goto bam_destroy_for_free;
+            }
             ++riter_idx;
         }
         while (riter_idx < region_size && b->core.tid == get<0>(numerical_regions[riter_idx]) &&
-                b->core.pos > get<2>(numerical_regions[riter_idx])) {
-            if (BamUtil::outAndEraseReads(back_moved_reads, output, bam_header, 0) != 0)
-                goto bam_destroy_for_free;
-            ++riter_idx;
-        }
+                b->core.pos > get<2>(numerical_regions[riter_idx])) ++riter_idx;
         if (riter_idx > pre_iter_idx && riter_idx < region_size) {
             // generate the reverse complement sequence from genome (.fa/.fasta) file for each region only once!
             auto riter_region_start = get<1>(numerical_regions[riter_idx]);
@@ -153,8 +152,10 @@ void Recsc::correct2() {
                          b->core.pos > get<1>(numerical_regions[riter_idx]) &&
                          b->core.pos < get<2>(numerical_regions[riter_idx]);
         // previous genome realignment reads output first
-        if (BamUtil::outAndEraseReads(back_moved_reads, output, bam_header, b->core.pos) != 0)
+        if (BamUtil::outputAndEraseReads(back_moved_reads, output, bam_header, b->core.pos) != 0) {
+            error_exit_flag = true;
             goto bam_destroy_for_free;
+        }
         unsigned int read_len = b->core.l_qseq;
         auto *tagData = (uint8_t *) bam_aux_get(b, tagName);
         if (capture_region && (read_len > options->endPosition) && (b->core.mtid >= 0) && tagData != nullptr) {
@@ -180,13 +181,13 @@ void Recsc::correct2() {
                     if (is_match_softclip_reads && is_clip_match_sa) {
                         auto read_end_pos = bam_endpos(b);
                         auto front_read_len = read_len - padding_len;
-                        if (sa_pos > read_end_pos + 3 || sa_pos <= read_end_pos) {
+                        if (b->core.pos <= sa_pos && (read_end_pos + 3 < sa_pos || sa_pos <= read_end_pos)) {
                             auto latest_genome_pos {b->core.pos};
                             size_t preceding_read_len{0};
                             auto new_cigar_len = b->core.n_cigar + sa_cigar_count;
                             auto* new_cigar = (uint32_t*) malloc(new_cigar_len * 4);
                             if (!new_cigar) {
-                                std::cerr << "Memory allocation for new cigar failure." << std::endl;
+                                error_exit_flag = true;
                                 goto bam_destroy_for_free;
                             }
                             for (auto i = 0; i < b->core.n_cigar; ++i) {
@@ -219,6 +220,7 @@ void Recsc::correct2() {
                                     }
                                     if (replace_cigar(b, i + 1, new_cigar) != 0) {
                                         free(new_cigar);
+                                        error_exit_flag = true;
                                         goto bam_destroy_for_free;
                                     }
                                     if (b->core.flag & BAM_FSECONDARY) {
@@ -238,17 +240,18 @@ void Recsc::correct2() {
                             }
                             free(new_cigar);
                             goto bam_write;
-                        }
+                        } else
+                            BamUtil::dump(b);
                     } else if (is_softclip_match_reads && is_match_clip_sa) {    // special case for duplication
                         vector<uint32_t> reverse_cigar;
                         size_t sa_idx_start{0}, consumed_read_len{0}, ni{0};
                         auto new_start_pos = sa_pos;
                         auto read_end_pos = bam_endpos(b);
-                        if (b->core.pos <= sa_pos && read_end_pos > sa_pos + 2) {
+                        if (b->core.pos <= sa_pos && sa_pos + 2 < read_end_pos) {
                             auto new_cigar_len = b->core.n_cigar + sa_cigar_count;
                             auto* new_cigar = (uint32_t*) malloc(new_cigar_len * 4);
                             if (!new_cigar) {
-                                std::cerr << "Memory allocation for new cigar failure." << std::endl;
+                                error_exit_flag = true;
                                 goto bam_destroy_for_free;
                             }
                             for (auto ci = 0; ci < sa_cigar_string.size() - 2; ++ci)   // skip the last 'S'
@@ -276,6 +279,7 @@ void Recsc::correct2() {
                                             new_cigar[ni++] = c;
                                     if (replace_cigar(b, ni, new_cigar) != 0) {
                                         free(new_cigar);
+                                        error_exit_flag = true;
                                         goto bam_destroy_for_free;
                                     }
                                     if (b->core.flag & BAM_FSECONDARY) {
@@ -293,7 +297,8 @@ void Recsc::correct2() {
                             }
                             free(new_cigar);
                             continue;
-                        }
+                        } else
+                            BamUtil::dump(b);
                     }
                 }
             }
@@ -408,17 +413,16 @@ void Recsc::correct2() {
         }
 bam_write:
         if (sam_write1(output, bam_header, b) < 0) {
-            std::cerr << "sam/bam writing failed, free and exiting ..." << std::endl;
+            error_exit_flag = true;
             goto bam_destroy_for_free;
         }
     }
 bam_destroy_for_free:
-    if (!back_moved_reads.empty())
-        for (auto & [_, reads_vec] : back_moved_reads)
-            for (auto & read: reads_vec)
-                bam_destroy1(read);
     bam_destroy1(b);
-    if (ends_with(options->output, "bam") && sam_idx_save(output) < 0) {
+    if (BamUtil::outputAndEraseReads(back_moved_reads, output, bam_header, 0) != 0)
+        error_exit("bam/sam writing failed, free and exiting ...");
+    if (ends_with(options->output, "bam") && sam_idx_save(output) < 0)
         error_exit("bam index writing failed, exiting ...");
-    }
+    if (error_exit_flag)
+        error_exit("some error occurred in memory allocation or writing bam/sam, exiting ...");
 }

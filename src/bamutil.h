@@ -74,21 +74,23 @@ public:
         return make_tuple(sa_ref, sa_pos, sa_strand, sa_cigar);
     }
 
-    static inline int outAndEraseReads(std::map<size_t, std::vector<bam1_t*>> & position_reads_dict, samFile * & bam_fp,
-                                       bam_hdr_t * & bam_header_t, size_t previous_pos) {
+    static inline int outputAndEraseReads(std::map<size_t, std::vector<bam1_t*>> & position_reads_dict,
+                                          samFile * & bam_fp, bam_hdr_t * & bam_header_t, size_t previous_pos) {
+        bool written_reads_error = false;
         if (!position_reads_dict.empty()) {
             for (auto erase_iter = position_reads_dict.begin(); erase_iter != position_reads_dict.end();) {
                 if (previous_pos < 1 || erase_iter->first <= previous_pos) {
                     for (auto &read: erase_iter->second) {
-                        if (sam_write1(bam_fp, bam_header_t, read) < 0) {
-                            return -1;
-                        } else bam_destroy1(read);
+                        if (!written_reads_error)
+                            if (sam_write1(bam_fp, bam_header_t, read) < 0)
+                                written_reads_error = true;
+                        bam_destroy1(read);
                     }
                     erase_iter = position_reads_dict.erase(erase_iter);
                 } else break;
             }
         }
-        return 0;
+        return written_reads_error ? -1 : 0;
     }
 
     static string getZTag(bam1_t* b, const char tagName[2]) {
