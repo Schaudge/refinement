@@ -223,10 +223,12 @@ void Recsc::correct2() {
                                         error_exit_flag = true;
                                         goto bam_destroy_for_free;
                                     }
-                                    if (b->core.flag & BAM_FSECONDARY) {
-                                        b->core.flag &= (~ BAM_FSECONDARY);
-                                    }
-                                    has_realigned_reads[bam_get_qname(b)] = b->core.flag & (BAM_FREAD1 | BAM_FREAD2);
+                                    if (has_realigned_reads.find(read_name) == has_realigned_reads.end()) {
+                                        if (b->core.flag & BAM_FSECONDARY)
+                                            b->core.flag &= (~ BAM_FSECONDARY);
+                                        has_realigned_reads[read_name] = b->core.flag & (BAM_FREAD1 | BAM_FREAD2);
+                                    } else
+                                        has_realigned_reads[read_name] = BAM_FREAD1 | BAM_FREAD2;
                                     break;
                                 } else
                                     new_cigar[i] = cigar_data[i];
@@ -282,11 +284,12 @@ void Recsc::correct2() {
                                         error_exit_flag = true;
                                         goto bam_destroy_for_free;
                                     }
-                                    if (b->core.flag & BAM_FSECONDARY) {
-                                        b->core.flag &= (~ BAM_FSECONDARY);
-                                    }
-                                    has_realigned_reads[bam_get_qname(b)] = b->core.flag & (BAM_FREAD1 | BAM_FREAD2);
-                                    back_moved_reads[new_start_pos].emplace_back(bam_dup1(b));
+                                    if (has_realigned_reads.find(read_name) == has_realigned_reads.end()) {
+                                        if (b->core.flag & BAM_FSECONDARY)
+                                            b->core.flag &= (~ BAM_FSECONDARY);
+                                        has_realigned_reads[read_name] = b->core.flag & (BAM_FREAD1 | BAM_FREAD2);
+                                    } else
+                                        has_realigned_reads[read_name] = BAM_FREAD1 | BAM_FREAD2;
                                     break;
                                 }
                                 reverse_cigar.emplace_back(cigar_data[i]);
