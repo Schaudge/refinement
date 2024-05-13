@@ -28,7 +28,7 @@ public:
     static bool isProperPair(bam1_t *b);
     static int getRightRefPos(bam1_t *b);
 
-    static inline bool charToOp(char cigar_char) {
+    static inline unsigned int charToOp(const char cigar_char) {
         return cigar_char == 'M' ? BAM_CMATCH : (cigar_char == 'S' ? BAM_CSOFT_CLIP : (cigar_char == 'I' ? BAM_CINS : BAM_CDEL));
     }
 

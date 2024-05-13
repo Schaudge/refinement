@@ -272,7 +272,10 @@ inline tuple<bool, bool, size_t, size_t> clipMatchConvert(const string& cigar_st
                 idx_start = ci + 1;
             } else if (cigar_op != 'D') {
                 return make_tuple(false, false, 0, 0);
-            } else ++cigar_count;
+            } else {
+                ++cigar_count;
+                idx_start = ci + 1;
+            }
         }
     }
     if (font_consume_len > back_consume_len + 2) {
