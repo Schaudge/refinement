@@ -2,6 +2,7 @@
 #define UTIL_H
 
 #include <cstdlib>
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <iostream>
@@ -10,6 +11,9 @@
 #include <algorithm>
 
 using namespace std;
+
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
 inline char complement(char base) {
     switch(base) {

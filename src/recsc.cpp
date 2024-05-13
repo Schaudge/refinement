@@ -108,13 +108,11 @@ void Recsc::correct2() {
             int64_t previous_end = get<2>(numerical_regions[last_region_idx]);
             if (current_tid == previous_tid && stoi(region_start) - previous_end < 10000) {
                 hts_pos_t pre_start = get<1>(numerical_regions[numerical_regions.size() - 1]);
-                numerical_regions[numerical_regions.size() - 1] =
-                        tuple<int32_t, hts_pos_t, hts_pos_t>(current_tid, pre_start, stoi(region_end));
+                numerical_regions[numerical_regions.size() - 1] = make_tuple(current_tid, pre_start, stol(region_end));
             } else
-                numerical_regions.emplace_back(current_tid, stoi(region_start), stoi(region_end));
+                numerical_regions.emplace_back(current_tid, stol(region_start), stol(region_end));
         } else
-            numerical_regions.emplace_back(sam_hdr_name2tid(bam_header, chr.c_str()),
-                                           stoi(region_start), stoi(region_end));
+            numerical_regions.emplace_back(sam_hdr_name2tid(bam_header, chr.c_str()), stol(region_start), stol(region_end));
     }
     region_input.close();
 
@@ -181,12 +179,12 @@ void Recsc::correct2() {
                     if (is_match_softclip_reads && is_clip_match_sa) {
                         auto read_end_pos = bam_endpos(b);
                         auto front_read_len = read_len - padding_len;
-                        if (b->core.pos <= sa_pos && (read_end_pos + 3 < sa_pos || sa_pos <= read_end_pos)) {
+                        if (likely(b->core.pos <= sa_pos && (read_end_pos + 3 < sa_pos || sa_pos <= read_end_pos))) {
                             auto latest_genome_pos {b->core.pos};
                             size_t preceding_read_len{0};
                             auto new_cigar_len = b->core.n_cigar + sa_cigar_count;
                             auto* new_cigar = (uint32_t*) malloc(new_cigar_len * 4);
-                            if (!new_cigar) {
+                            if (unlikely(!new_cigar)) {
                                 error_exit_flag = true;
                                 goto bam_destroy_for_free;
                             }
@@ -244,15 +242,15 @@ void Recsc::correct2() {
                             goto bam_write;
                         } else
                             BamUtil::dump(b);
-                    } else if (is_softclip_match_reads && is_match_clip_sa) {    // special case for duplication
+                    } else if (is_softclip_match_reads && is_match_clip_sa) {       // special case for duplication
                         vector<uint32_t> reverse_cigar;
                         size_t sa_idx_start{0}, consumed_read_len{0}, ni{0};
                         auto new_start_pos = sa_pos;
                         auto read_end_pos = bam_endpos(b);
-                        if (b->core.pos <= sa_pos && sa_pos + 2 < read_end_pos) {
+                        if (likely(b->core.pos <= sa_pos && sa_pos + 2 < read_end_pos)) {
                             auto new_cigar_len = b->core.n_cigar + sa_cigar_count;
                             auto* new_cigar = (uint32_t*) malloc(new_cigar_len * 4);
-                            if (!new_cigar) {
+                            if (unlikely(!new_cigar)) {
                                 error_exit_flag = true;
                                 goto bam_destroy_for_free;
                             }
