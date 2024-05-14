@@ -252,7 +252,7 @@ inline size_t hamming_distance(const string& str1, const string& str2) {
 
 inline tuple<bool, bool, size_t, size_t> clipMatchConvert(const string& cigar_string) {
     size_t idx_start{0}, font_consume_len{0}, back_consume_len{0}, cigar_count{0};
-    for (auto ci = 0; ci < cigar_string.size(); ++ci) {
+    for (auto ci = 1; ci < cigar_string.size(); ++ci) {
         char cigar_op = cigar_string[ci];
         if (isalpha(cigar_op)) {
             if (cigar_op == 'S') {

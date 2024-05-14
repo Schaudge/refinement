@@ -254,16 +254,18 @@ void Recsc::correct2() {
                                 error_exit_flag = true;
                                 goto bam_destroy_for_free;
                             }
-                            for (auto ci = 0; ci < sa_cigar_string.size() - 2; ++ci)   // skip the last 'S'
-                                if (isalpha(sa_cigar_string[ci])) {
+                            for (auto ci = 1; ci < sa_cigar_string.size() - 2; ++ci) {   // skip the last 'S'
+                                char op_char = sa_cigar_string[ci];
+                                if (isalpha(op_char)) {
                                     auto op_len = stol(sa_cigar_string.substr(sa_idx_start, ci - sa_idx_start));
-                                    new_cigar[ni++] = bam_cigar_gen(op_len, BamUtil::charToOp(sa_cigar_string[ci]));
-                                    if (sa_cigar_string[ci] != 'D')
+                                    new_cigar[ni++] = bam_cigar_gen(op_len, BamUtil::charToOp(op_char));
+                                    if (op_char != 'D')
                                         consumed_read_len += op_len;
-                                    if (sa_cigar_string[ci] == 'M' || sa_cigar_string[ci] == 'D')
+                                    if (op_char == 'M' || op_char == 'D')
                                         sa_pos += op_len;
                                     sa_idx_start = ci + 1;
                                 }
+                            }
                             for (auto i = b->core.n_cigar - 1; i > 0; --i) {
                                 auto reverse_op_char = bam_cigar_opchr(cigar_data[i]);
                                 auto reverse_op_len = bam_cigar_oplen(cigar_data[i]);
@@ -288,6 +290,7 @@ void Recsc::correct2() {
                                         has_realigned_reads[read_name] = b->core.flag & (BAM_FREAD1 | BAM_FREAD2);
                                     } else
                                         has_realigned_reads[read_name] = BAM_FREAD1 | BAM_FREAD2;
+                                    back_moved_reads[new_start_pos].emplace_back(bam_dup1(b));
                                     break;
                                 }
                                 reverse_cigar.emplace_back(cigar_data[i]);
