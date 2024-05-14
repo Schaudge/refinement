@@ -194,8 +194,10 @@ void Recsc::correct2() {
                                     bam_aux_del(b, sa_tag_ptr);
                                     if (latest_genome_pos + current_op_len >= sa_pos) {
                                         auto padded_len = sa_pos - latest_genome_pos;
-                                        if (padded_len > 0)
-                                            new_cigar[i++] = (padded_len << BAM_CIGAR_SHIFT) | (cigar_data[i] & BAM_CIGAR_MASK);
+                                        if (padded_len > 0) {
+                                            new_cigar[i] = (padded_len << BAM_CIGAR_SHIFT) | (cigar_data[i] & BAM_CIGAR_MASK);
+                                            ++i;
+                                        }
                                         new_cigar[i] = bam_cigar_gen(front_read_len - preceding_read_len - padded_len, BAM_CINS);
                                     } else {
                                         auto padded_len = front_read_len - preceding_read_len;

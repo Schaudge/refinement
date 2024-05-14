@@ -51,7 +51,7 @@ inline string trim(const string& str)
     string::size_type pos = str.find_first_not_of(' ');
     if (pos == string::npos)
     {
-        return string("");
+        return string{""};
     }
     string::size_type pos2 = str.find_last_not_of(' ');
     if (pos2 != string::npos)
@@ -148,7 +148,7 @@ inline string dirname(const string& filename){
 }
 
 inline string join_path(const string& dirname, const string& basename){
-    if(dirname[dirname.length()-1] == '/'){
+    if (dirname[dirname.length()-1] == '/') {
         return dirname + basename;
     } else {
         return dirname + "/" + basename;
@@ -159,10 +159,10 @@ inline string join_path(const string& dirname, const string& basename){
 inline bool file_exists(const  string& s)
 {
     bool exists = false;
-    if(s.length() > 0) {
-        struct stat status;
+    if (!s.empty()) {
+        struct stat status{};
         int result = stat( s.c_str(), &status );
-        if(result == 0) {
+        if (result == 0) {
             exists = true;
         }
     }
@@ -174,7 +174,7 @@ inline bool file_exists(const  string& s)
 inline bool is_directory(const  string& path)
 {
     bool isdir = false;
-    struct stat status;
+    struct stat status{};
     // visual studion use _S_IFDIR instead of S_IFDIR
     // http://msdn.microsoft.com/en-us/library/14h5k7ff.aspx
 #ifdef _MSC_VER
@@ -202,10 +202,10 @@ inline void check_file_valid(const  string& s) {
 // Remove non alphabetic characters from a string
 inline  string str_keep_alpha(const  string& s)
 {
-     string new_str;
-    for (size_t it =0; it < s.size(); it++) {
-        if (isalpha(s[it]) ) {
-            new_str += s[it];
+    string new_str;
+    for (char it : s) {
+        if (isalpha(it) ) {
+            new_str += it;
         }
     }
     return new_str;
@@ -238,15 +238,15 @@ inline void str2lower(string& s){
     transform(s.begin(), s.end(), s.begin(), (int (*)(int))tolower);
 }
 
-inline int hamming_distance(const string& str1, const string& str2) {
-    int diff = 0;
-    int len1 = str1.length();
-    int len2 = str2.length();
-    for(int i=0; i<len1 && i<len2; i++) {
-        if(str1[i] != str2[i])
+inline size_t hamming_distance(const string& str1, const string& str2) {
+    size_t diff = 0;
+    auto len1 = str1.length();
+    auto len2 = str2.length();
+    for (auto i = 0; i < len1 && i < len2; ++i) {
+        if (str1[i] != str2[i])
             diff++;
     }
-    diff += abs(len1 - len2);
+    diff += len1 > len2 ? len1 - len2 : len2 - len1;
     return diff;
 }
 
@@ -256,26 +256,21 @@ inline tuple<bool, bool, size_t, size_t> clipMatchConvert(const string& cigar_st
         char cigar_op = cigar_string[ci];
         if (isalpha(cigar_op)) {
             if (cigar_op == 'S') {
-                ++cigar_count;
                 long op_len = stol(cigar_string.substr(idx_start, ci - idx_start));
                 if (ci == cigar_string.size() - 1) {
                     back_consume_len += op_len;
                 } else {
                     font_consume_len += op_len;
                 }
-                idx_start = ci + 1;
             } else if (cigar_op == 'M' || cigar_op == 'I') {
-                ++cigar_count;
                 long op_len = stol(cigar_string.substr(idx_start, ci - idx_start));
                 font_consume_len += op_len;
                 back_consume_len += op_len;
-                idx_start = ci + 1;
-            } else if (cigar_op != 'D') {
+            } else if (unlikely(cigar_op != 'D')) {
                 return make_tuple(false, false, 0, 0);
-            } else {
-                ++cigar_count;
-                idx_start = ci + 1;
             }
+            ++cigar_count;
+            idx_start = ci + 1;
         }
     }
     if (font_consume_len > back_consume_len + 2) {
