@@ -30,6 +30,7 @@ public:
     // thresholds
     int endPosition;
     int refRange;
+    int maxdel;
 };
 
 #endif

@@ -4,8 +4,8 @@
  * 2021-06-09
  * MIT LICENSE
  */
-#include <stdio.h>
-#include <time.h>
+#include <cstdio>
+#include <ctime>
 #include <sstream>
 #include "cmdline.h"
 #include "common.h"
@@ -34,6 +34,7 @@ int main(int argc, char* argv[]){
     // thresholds
     cmd.add<int>("max_end_distance", 'm', "The maximum length for the reads position with mismatch base, we trigger the correct strategy to run. The value should less than 15.", false, 12);
     cmd.add<int>("near_ref_range", 'n', "The range size for the realigned reference sequence around the checked genome position. The value should less than 1000.", false, 300);
+    cmd.add<int>("max_deletion_size", 'd', "The maximum the deletion size for read realignment. The value should less than 100000.", false, 501);
 
     // debugging
     cmd.add("debug", 0, "output some debug information to STDERR.");
@@ -47,6 +48,7 @@ int main(int argc, char* argv[]){
     opt.regionFile = cmd.get<string>("region");
     opt.nthreads = cmd.get<int>("thread");
     opt.endPosition = cmd.get<int>("max_end_distance");
+    opt.maxdel = cmd.get<int>("max_deletion_size");
     opt.refRange = cmd.get<int>("near_ref_range");
     opt.debug = cmd.exist("debug");
 

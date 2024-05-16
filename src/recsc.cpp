@@ -179,70 +179,94 @@ void Recsc::correct2() {
                     if (is_match_softclip_reads && is_clip_match_sa) {
                         auto read_end_pos = bam_endpos(b);
                         auto front_read_len = read_len - padding_len;
-                        if (likely(b->core.pos <= sa_pos && (read_end_pos + 3 < sa_pos || sa_pos <= read_end_pos))) {
-                            auto latest_genome_pos {b->core.pos};
-                            size_t preceding_read_len{0};
+                        if (likely(b->core.pos <= sa_pos && sa_pos < (read_end_pos + options->maxdel) && (read_end_pos + 17 < sa_pos || sa_pos < read_end_pos + 10))) {
                             auto new_cigar_len = b->core.n_cigar + sa_cigar_count;
                             auto* new_cigar = (uint32_t*) malloc(new_cigar_len * 4);
                             if (unlikely(!new_cigar)) {
                                 error_exit_flag = true;
                                 goto bam_destroy_for_free;
                             }
-                            for (auto i = 0; i < b->core.n_cigar; ++i) {
-                                auto current_op_len = bam_cigar_oplen(cigar_data[i]);
+                            auto latest_genome_pos {b->core.pos};
+                            size_t preceding_read_len{0}, new_cigar_idx{0};
+                            bool indel_has_padded{false};
+                            for (; new_cigar_idx < b->core.n_cigar - 1; ++new_cigar_idx) {    // skip the last 'S' operator
+                                auto current_op_len = bam_cigar_oplen(cigar_data[new_cigar_idx]);
+                                auto current_op_chr = bam_cigar_opchr(cigar_data[new_cigar_idx]);
                                 if (latest_genome_pos + current_op_len >= sa_pos || preceding_read_len + current_op_len >= front_read_len) {
-                                    bam_aux_del(b, sa_tag_ptr);
-                                    if (latest_genome_pos + current_op_len >= sa_pos) {
-                                        auto padded_len = sa_pos - latest_genome_pos;
+                                    auto under_padding_seq_len = front_read_len - preceding_read_len;
+                                    auto remained_genome_distance  = sa_pos - latest_genome_pos;
+                                    auto padded_len = under_padding_seq_len > remained_genome_distance ? remained_genome_distance : under_padding_seq_len;
+                                    if (latest_genome_pos + padded_len >= sa_pos) {
                                         if (padded_len > 0) {
-                                            new_cigar[i] = (padded_len << BAM_CIGAR_SHIFT) | (cigar_data[i] & BAM_CIGAR_MASK);
-                                            ++i;
+                                            new_cigar[new_cigar_idx] = (padded_len << BAM_CIGAR_SHIFT) | (cigar_data[new_cigar_idx] & BAM_CIGAR_MASK);
+                                            ++new_cigar_idx;
                                         }
-                                        new_cigar[i] = bam_cigar_gen(front_read_len - preceding_read_len - padded_len, BAM_CINS);
+                                        new_cigar[new_cigar_idx] = bam_cigar_gen(under_padding_seq_len - padded_len, BAM_CINS);
                                     } else {
-                                        auto padded_len = front_read_len - preceding_read_len;
-                                        new_cigar[i] = (padded_len << BAM_CIGAR_SHIFT) | (cigar_data[i] & BAM_CIGAR_MASK);
-                                        new_cigar[++i] = bam_cigar_gen(sa_pos - latest_genome_pos - padded_len, BAM_CDEL);
+                                        new_cigar[new_cigar_idx] = (padded_len << BAM_CIGAR_SHIFT) | (cigar_data[new_cigar_idx] & BAM_CIGAR_MASK);
+                                        new_cigar[++new_cigar_idx] = bam_cigar_gen(remained_genome_distance - padded_len, BAM_CDEL);
                                     }
-                                    size_t back_padding_start{0};
-                                    bool first_clip_skipped{false};
-                                    for (auto pi = 1; pi < sa_cigar_string.size(); ++pi) {
-                                        if (sa_cigar_string[pi] == 'S' && !first_clip_skipped) {
-                                            first_clip_skipped = true;
-                                            back_padding_start = pi + 1;
-                                        } else if (first_clip_skipped && isalpha(sa_cigar_string[pi])) {
-                                            auto op_len = stol(sa_cigar_string.substr(back_padding_start, pi - back_padding_start));
-                                            back_padding_start = pi + 1;
-                                            new_cigar[++i] = bam_cigar_gen(op_len, BamUtil::charToOp(sa_cigar_string[pi]));
-                                        }
-                                    }
-                                    if (replace_cigar(b, i + 1, new_cigar) != 0) {
-                                        free(new_cigar);
-                                        error_exit_flag = true;
-                                        goto bam_destroy_for_free;
-                                    }
-                                    if (has_realigned_reads.find(read_name) == has_realigned_reads.end()) {
-                                        if (b->core.flag & BAM_FSECONDARY)
-                                            b->core.flag &= (~ BAM_FSECONDARY);
-                                        has_realigned_reads[read_name] = b->core.flag & (BAM_FREAD1 | BAM_FREAD2);
-                                    } else
-                                        has_realigned_reads[read_name] = BAM_FREAD1 | BAM_FREAD2;
+                                    indel_has_padded = true;
                                     break;
                                 } else
-                                    new_cigar[i] = cigar_data[i];
-                                if (bam_cigar_opchr(cigar_data[i]) == 'M') {
+                                    new_cigar[new_cigar_idx] = cigar_data[new_cigar_idx];
+                                if (current_op_chr == 'M') {
                                     latest_genome_pos += current_op_len;
                                     preceding_read_len += current_op_len;
-                                } else if (bam_cigar_opchr(cigar_data[i]) == 'S' || bam_cigar_opchr(cigar_data[i]) == 'I')
-                                    preceding_read_len += bam_cigar_oplen(cigar_data[i]);
-                                else if (bam_cigar_opchr(cigar_data[i]) == 'D')
-                                    latest_genome_pos += bam_cigar_oplen(cigar_data[i]);
+                                } else if (current_op_chr == 'S' || current_op_chr == 'I')
+                                    preceding_read_len += current_op_len;
+                                else if (current_op_chr == 'D')
+                                    latest_genome_pos += current_op_len;
                             }
+                            size_t mismatch_seq_len{0};
+                            if (!indel_has_padded) {   // complex indels case, insertions + deletions
+                                auto padded_len = front_read_len - preceding_read_len;
+                                if (sa_pos < latest_genome_pos + 11 && padded_len > 11) {         // long insertion
+                                    mismatch_seq_len = sa_pos - latest_genome_pos;
+                                    new_cigar[new_cigar_idx] = bam_cigar_gen(padded_len - mismatch_seq_len, BAM_CINS);
+                                } else if (sa_pos > latest_genome_pos + 17 && padded_len < 17) {  // long deletion
+                                    mismatch_seq_len = padded_len;
+                                    new_cigar[new_cigar_idx] = bam_cigar_gen(sa_pos - latest_genome_pos - mismatch_seq_len, BAM_CDEL);
+                                } else {                                                          // should never occur
+                                    BamUtil::dump(b);
+                                    free(new_cigar);
+                                    goto bam_write;
+                                }
+                            }
+                            size_t back_padding_start{0};
+                            bool first_clip_skipped{false};
+                            for (auto pi = 1; pi < sa_cigar_string.size(); ++pi) {
+                                auto sa_op_char = sa_cigar_string[pi];
+                                if (sa_op_char == 'S' && !first_clip_skipped) {
+                                    first_clip_skipped = true;
+                                    back_padding_start = pi + 1;
+                                } else if (unlikely(first_clip_skipped && mismatch_seq_len > 0 && sa_op_char == 'M')) {
+                                    auto op_len = stol(sa_cigar_string.substr(back_padding_start, pi - back_padding_start));
+                                    back_padding_start = pi + 1;
+                                    new_cigar[++new_cigar_idx] = bam_cigar_gen(op_len + mismatch_seq_len, BAM_CMATCH);
+                                    mismatch_seq_len = 0;
+                                } else if (first_clip_skipped && isalpha(sa_op_char)) {
+                                    auto op_len = stol(sa_cigar_string.substr(back_padding_start, pi - back_padding_start));
+                                    back_padding_start = pi + 1;
+                                    new_cigar[++new_cigar_idx] = bam_cigar_gen(op_len, BamUtil::charToOp(sa_op_char));
+                                }
+                            }
+                            bam_aux_del(b, sa_tag_ptr);
+                            if (replace_cigar(b, new_cigar_idx + 1, new_cigar) != 0) {
+                                free(new_cigar);
+                                error_exit_flag = true;
+                                goto bam_destroy_for_free;
+                            }
+                            if (has_realigned_reads.find(read_name) == has_realigned_reads.end()) {
+                                if (b->core.flag & BAM_FSECONDARY)
+                                    b->core.flag &= (~ BAM_FSECONDARY);
+                                has_realigned_reads[read_name] = b->core.flag & (BAM_FREAD1 | BAM_FREAD2);
+                            } else
+                                has_realigned_reads[read_name] = BAM_FREAD1 | BAM_FREAD2;
                             free(new_cigar);
                             goto bam_write;
-                        } else
-                            BamUtil::dump(b);
-                    } else if (is_softclip_match_reads && is_match_clip_sa) {       // special case for duplication
+                        }
+                    } else if (is_softclip_match_reads && is_match_clip_sa) {       // special case for duplication (insertion)
                         vector<uint32_t> reverse_cigar;
                         size_t sa_idx_start{0}, consumed_read_len{0}, ni{0};
                         auto new_start_pos = sa_pos;
@@ -254,7 +278,7 @@ void Recsc::correct2() {
                                 error_exit_flag = true;
                                 goto bam_destroy_for_free;
                             }
-                            for (auto ci = 1; ci < sa_cigar_string.size() - 2; ++ci) {   // skip the last 'S'
+                            for (auto ci = 1; ci < sa_cigar_string.size() - 2; ++ci) {   // skip the last 'S' operator
                                 char op_char = sa_cigar_string[ci];
                                 if (isalpha(op_char)) {
                                     auto op_len = stol(sa_cigar_string.substr(sa_idx_start, ci - sa_idx_start));
@@ -266,7 +290,7 @@ void Recsc::correct2() {
                                     sa_idx_start = ci + 1;
                                 }
                             }
-                            for (auto i = b->core.n_cigar - 1; i > 0; --i) {
+                            for (auto i = b->core.n_cigar - 1; i > 0; --i) {    // skip the first 'S' operator for raw CIGAR
                                 auto reverse_op_char = bam_cigar_opchr(cigar_data[i]);
                                 auto reverse_op_len = bam_cigar_oplen(cigar_data[i]);
                                 if (reverse_op_char != 'S' && read_end_pos - reverse_op_len <= sa_pos) {
