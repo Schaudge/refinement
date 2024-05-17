@@ -271,7 +271,7 @@ void Recsc::correct2() {
                         size_t sa_idx_start{0}, consumed_read_len{0}, ni{0};
                         auto new_start_pos = sa_pos;
                         auto read_end_pos = bam_endpos(b);
-                        if (likely(b->core.pos <= sa_pos && sa_pos + 2 < read_end_pos)) {
+                        if (likely(b->core.pos <= sa_pos && sa_pos + padding_len < read_end_pos)) {
                             auto new_cigar_len = b->core.n_cigar + sa_cigar_count;
                             auto* new_cigar = (uint32_t*) malloc(new_cigar_len * 4);
                             if (unlikely(!new_cigar)) {
